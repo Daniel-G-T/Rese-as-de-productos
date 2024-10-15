@@ -22,7 +22,7 @@ en_stop = {'a','al','algo','algunas','algunos','ante','antes','como','con','cont
 #######################
 # Page configuration
 st.set_page_config(
-    page_title="Carpetas de investigacion FGJ",
+    page_title="Opiniones textuales de productos",
     page_icon="",
     layout="wide",
     initial_sidebar_state="expanded")
@@ -114,7 +114,11 @@ with tab1:
 	st.plotly_chart(fig2, use_container_width=True) 
 	
 	st.subheader("Nube de palabras de tokens")
-	nube_image=WordCloud(collocations =False,max_words=20,background_color="white",stopwords=en_stop).generate(" ".join(datos.Tokens))
+	st.markdown("En esta nube de palabras, se destacan las principales percepciones de nuestros clientes sobre el producto. Las palabras más grandes representan los términos más repetidos y reflejan las características o experiencias que más resonaron con nuestros usuarios. Esto nos ofrece una visión rápida de las opiniones generales, desde los aspectos más valorados hasta los puntos de mejora mencionados con frecuencia.")
+	nube_image = WordCloud(collocations =False,max_words=20,background_color="white",min_word_length=3,colormap='OrRd',
+                 stopwords=['parecer','mismo','decir','solo','primero','aunque','hacer','poder']+['hotel','coche','lavadora','libro',
+		'película']).generate(" ".join(datos.Tokens))
+
 	fig3 = go.Figure()
 	fig3.add_trace(go.Image(z=nube_image))
 	fig3.update_xaxes(visible=False, fixedrange=False)
@@ -122,32 +126,37 @@ with tab1:
 	st.plotly_chart(fig3, use_container_width=True) 
 
 with tab2:
-	st.header("Representación de textos", divider="gray")
+	st.header("Representación de textos con TSNE", divider="gray")
 	vectorizer = TfidfVectorizer(lowercase=False, ngram_range= (1,1), max_features=750, binary=False)
 	X = vectorizer.fit_transform(datos.Tokens)	
 	tf_idf = X.toarray()
 	tf_idf_df = pd.DataFrame(tf_idf,columns=vectorizer.get_feature_names_out())
 	
+	option = st.selectbox("Selecciona un periodo de conteo:",("TSNE", "LLE", "PCA"),)
+	if option == "TSNE":
+		tsne = TSNE(init = 'random', perplexity=30, n_iter_without_progress=150, n_jobs=2, random_state=0)
+		emb = tsne.fit_transform(tf_idf_df)
+	else:
+		embedding = LocallyLinearEmbedding(n_components=2)
+		emb = embedding.fit_transform(tf_idf_df)
 	
-	tsne = TSNE(init = 'random', perplexity=30, n_iter=10500, n_iter_without_progress=150, n_jobs=2, random_state=0)
-	tsne_emb = tsne.fit_transform(tf_idf_df)
-	proj = pd.DataFrame(tsne_emb,columns = ['pc1','pc2'])
-
+	proj = pd.DataFrame(emb,columns = ['pc1','pc2'])
 	fig4 = px.scatter(proj, x="pc1", y="pc2", color=datos['categoria'])
 	fig4.update_traces(marker_size=8)
 	st.plotly_chart(fig4, use_container_width=True) 
 
 with tab3:
 	st.header("Clasificación de texto", divider="gray")
-	st.markdown("Resultados al clasificar una muestra de las opiniones con regresión logística.")
+	st.markdown("Resultados al clasificar 80 opiniones (10 de cada producto) con un modelo de regresión logística entrenado en el resto de opiniones.")
 	X_train, X_test, y_train, y_test = train_test_split(tf_idf_df, datos['categoria'], test_size=0.20, random_state=20)
 	reg = LogisticRegression(fit_intercept=True,random_state=0, multi_class='multinomial').fit(X_train, y_train)
 	y_pred=reg.predict(X_test)
 	correct = (y_pred == y_test)
 
-	st.dataframe(pd.DataFrame(classification_report(y_test, y_pred, output_dict=True)).transpose())
 	fig5 = px.scatter(proj.iloc[X_test.index,:][correct], x="pc1", y="pc2", 
                  color=datos['categoria'][X_test.index][correct])
 	fig5.add_trace(go.Scatter(mode='markers',x=proj.iloc[X_test.index,0][~correct],y=proj.iloc[X_test.index,1][~correct],
 		marker=dict(color='darkred',size = 20, symbol='cross'),name = "Errores",showlegend=True,))
 	st.plotly_chart(fig5, use_container_width=True) 
+	st.dataframe(pd.DataFrame(classification_report(y_test, y_pred, output_dict=True)).transpose())
+	
