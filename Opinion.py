@@ -13,6 +13,9 @@ from sklearn.model_selection import train_test_split
 from sklearn.manifold import TSNE, LocallyLinearEmbedding
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import AdaBoostClassifier
+from sklearn import svm
+from sklearn.neural_network import MLPClassifier
 
 
 ###################
@@ -132,13 +135,17 @@ with tab2:
 	tf_idf = X.toarray()
 	tf_idf_df = pd.DataFrame(tf_idf,columns=vectorizer.get_feature_names_out())
 	
-	option = st.selectbox("Selecciona un periodo de conteo:",("TSNE", "LLE", "PCA"),)
+	option = st.selectbox("Selecciona un periodo de conteo:",("TSNE", "LLE", "KPCA"),)
 	if option == "TSNE":
 		tsne = TSNE(init = 'random', perplexity=30, n_iter_without_progress=150, n_jobs=2, random_state=0)
 		emb = tsne.fit_transform(tf_idf_df)
-	else:
-		embedding = LocallyLinearEmbedding(n_components=2)
+	elif option == "LLE":
+		embedding = LocallyLinearEmbedding(n_components=2, n_neighbors=10)
 		emb = embedding.fit_transform(tf_idf_df)
+	else:
+		kernel_pca = KernelPCA(n_components=2, kernel="rbf", gamma=1/2, alpha=0.1)
+		emb = kernel_pca.fit_transform(tf_idf_df)
+		
 	
 	proj = pd.DataFrame(emb,columns = ['pc1','pc2'])
 	fig4 = px.scatter(proj, x="pc1", y="pc2", color=datos['categoria'])
@@ -147,12 +154,27 @@ with tab2:
 
 with tab3:
 	st.header("Clasificación de texto", divider="gray")
-	st.markdown("Resultados al clasificar 80 opiniones (10 de cada producto) con un modelo de regresión logística entrenado en el resto de opiniones.")
+	st.markdown("Resultados al clasificar 80 opiniones (10 de cada producto) con un clasificador entrenado en el resto de opiniones.")
 	X_train, X_test, y_train, y_test = train_test_split(tf_idf_df, datos['categoria'], test_size=0.20, random_state=20)
-	reg = LogisticRegression(fit_intercept=True,random_state=0, multi_class='multinomial').fit(X_train, y_train)
-	y_pred=reg.predict(X_test)
-	correct = (y_pred == y_test)
 
+	clasif = st.selectbox("Selecciona un periodo de conteo:",("RegresionLogistica", "SVM", "AdaBoost","MLP"),)
+	if clasif == "RegresionLogistica":
+		reg = LogisticRegression(fit_intercept=True,random_state=0, multi_class='multinomial').fit(X_train, y_train)
+		y_pred=reg.predict(X_test)
+
+	elif clasif== "SVM" :
+		clf = svm.SVC()
+		y_pred = clf.fit(X_train, y_train).predict(X_test)
+
+	elif clasif=="AdaBoost":
+		clf = AdaBoostClassifier(n_estimators=100, algorithm="SAMME",)
+		y_pred = clf.fit(X_train, y_train).predict(X_test)
+
+	else:
+		clf = MLPClassifier(solver='lbfgs', alpha=1e-5,hidden_layer_sizes=(10, 4), random_state=1)
+		y_pred = clf.fit(X_train, y_train).predict(X_test)
+
+	correct = (y_pred == y_test)
 	fig5 = px.scatter(proj.iloc[X_test.index,:][correct], x="pc1", y="pc2", 
                  color=datos['categoria'][X_test.index][correct])
 	fig5.add_trace(go.Scatter(mode='markers',x=proj.iloc[X_test.index,0][~correct],y=proj.iloc[X_test.index,1][~correct],
